@@ -119,10 +119,119 @@ jobs:
         with:
           name: tinymesa-whl-${{ matrix.tag }}-${{ matrix.os }}
           path: dist/
+  android:
+    name: Build tinymesa mesa-25.2.7 for Android arm64-v8a
+    runs-on: ubuntu-22.04
+    env:
+      MESA_TAG: mesa-25.2.7
+      ANDROID_API: '25'
+      NDK_VERSION: 29.0.14206865
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup tinymesa
+        uses: ./.github/actions/setup
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android NDK
+        run: sdkmanager "ndk;${NDK_VERSION}"
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+          targets: aarch64-linux-android
+      - name: Install bindgen
+        run: cargo install --locked --version 0.72.1 bindgen-cli
+      - name: Clone mesa
+        run: git clone --depth 1 --branch ${MESA_TAG} https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
+      - name: Build host mesa_clc
+        run: |
+          cd ${{ github.workspace }}/mesa
+          export CLANG_PATH=$(which clang-20)
+          meson setup build-compiler \
+            -Dprefix=${{ runner.temp }}/mesa-compiler \
+            -Dbuildtype=release \
+            -Dstrip=true \
+            -Dplatforms="[]" \
+            -Dgallium-drivers="[]" \
+            -Dvulkan-drivers="[]" \
+            -Dmesa-clc=enabled \
+            -Dinstall-mesa-clc=true
+          meson install -C build-compiler
+          echo "${{ runner.temp }}/mesa-compiler/bin" >> "$GITHUB_PATH"
+      - name: Patch mesa
+        run: ./apply_patches.py ${{ github.workspace }}/mesa ${MESA_TAG}
+      - name: Build Android wheel
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-20/lib
+        run: |
+          NDK=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}
+          TOOLCHAIN=${NDK}/toolchains/llvm/prebuilt/linux-x86_64
+          cat > ${{ runner.temp }}/android-aarch64.ini <<EOF
+          [binaries]
+          ar = '${TOOLCHAIN}/bin/llvm-ar'
+          c = '${TOOLCHAIN}/bin/aarch64-linux-android${ANDROID_API}-clang'
+          cpp = ['${TOOLCHAIN}/bin/aarch64-linux-android${ANDROID_API}-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '--start-no-unused-arguments', '-static-libstdc++', '--end-no-unused-arguments']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '${TOOLCHAIN}/bin/llvm-strip'
+          rust = ['rustc', '--target', 'aarch64-linux-android']
+
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+
+          [properties]
+          needs_exe_wrapper = true
+          bindgen_clang_arguments = ['-target', 'aarch64-linux-android', '--sysroot', '${TOOLCHAIN}/sysroot']
+          EOF
+
+          cd ${{ github.workspace }}/mesa
+          export CLANG_PATH=$(which clang-20)
+          meson setup build-android \
+            --cross-file=${{ runner.temp }}/android-aarch64.ini \
+            -Dbuildtype=release \
+            -Db_ndebug=true \
+            -Db_staticpic=true \
+            -Dplatforms=android \
+            -Dplatform-sdk-version=${ANDROID_API} \
+            -Dandroid-stub=true \
+            -Dandroid-strict=false \
+            -Dandroid-libbacktrace=disabled \
+            -Dgallium-drivers="[]" \
+            -Dvulkan-drivers=freedreno,nouveau \
+            -Dfreedreno-kmds=kgsl \
+            -Dallow-fallback-for=libdrm \
+            -Dmesa-clc=system \
+            -Dllvm=disabled \
+            -Dshader-cache=disabled \
+            -Dzstd=disabled \
+            -Dzlib=disabled \
+            -Dopengl=false \
+            -Degl=disabled \
+            -Dgbm=disabled \
+            -Dvideo-codecs="[]"
+          meson compile -C build-android tinymesa
+          LIB=$(realpath "$(meson introspect build-android --targets | jq -er '.[] | select(.name=="tinymesa") | .filename[0]')")
+          ${TOOLCHAIN}/bin/llvm-readelf -h "$LIB" | grep -q AArch64
+          ${TOOLCHAIN}/bin/llvm-nm -D --defined-only "$LIB" | grep -q ' nak_compiler_create$'
+          ${TOOLCHAIN}/bin/llvm-nm -D --defined-only "$LIB" | grep -q ' ir3_compile_shader_nir$'
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION_ARG=(--tag "$GITHUB_REF_NAME"); else VERSION_ARG=(--sha "${GITHUB_SHA::7}"); fi
+          cd ${{ github.workspace }}
+          ./build_wheel.py "${VERSION_ARG[@]}" --platform android_${ANDROID_API}_arm64_v8a ${MESA_TAG} "$LIB"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinymesa-whl-mesa-25.2.7-android-arm64-v8a
+          path: dist/
+
   release:
     name: Release tinymesa
     runs-on: ubuntu-22.04
-    needs: tinymesa
+    needs: [ tinymesa, android ]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     environment:
       name: pypi

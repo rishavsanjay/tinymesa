@@ -82,3 +82,9 @@ all these symbols, but in addition, a subset of symbols from `gallium`
 (see release notes), and as a result depends on LLVM-20.
 
 Builds are automatically generated upon new releases of mesa (checked daily).
+
+### Android
+
+Android `arm64-v8a` wheels target API 25 and contain `libtinymesa.so` with
+the same NIR, NAK, and IR3 compiler API as the desktop build. The optional
+LLVMpipe-based `libtinymesa_cpu.so` is not included.
