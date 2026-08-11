@@ -85,6 +85,4 @@ Builds are automatically generated upon new releases of mesa (checked daily).
 
 ### Android
 
-Android `arm64-v8a` wheels target API 25 and contain `libtinymesa.so` with
-the same NIR, NAK, and IR3 compiler API as the desktop build. The optional
-LLVMpipe-based `libtinymesa_cpu.so` is not included.
+Android arm64 wheels target API 25 and include NIR and IR3 support. NAK and LLVMpipe are not included.
