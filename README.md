@@ -85,4 +85,6 @@ Builds are automatically generated upon new releases of mesa (checked daily).
 
 ### Android
 
-Android arm64 wheels target API 25 and include NIR and IR3 support. NAK and LLVMpipe are not included.
+Android arm64-v8a wheels target API 25 and currently ship
+`libtinymesa.so` with NIR + IR3/freedreno support. NAK is not included,
+and `libtinymesa_cpu.so`/LLVMpipe is not built.
