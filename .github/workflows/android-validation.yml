@@ -1,0 +1,62 @@
+name: Android CI validation
+
+on:
+  push:
+    branches:
+      - android-ci-validation
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Build tinymesa mesa-25.2.7 on Android arm64
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup tinymesa
+        uses: ./.github/actions/setup
+      - name: Verify Android NDK
+        shell: bash
+        run: |
+          test -x "${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android25-clang"
+      - name: Clone mesa
+        run: git clone --depth 1 --branch mesa-25.2.7 https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
+      - name: Patch mesa
+        run: ./apply_patches.py ${{ github.workspace }}/mesa mesa-25.2.7
+      - name: Build mesa
+        shell: bash
+        run: |
+          TOOLCHAIN=${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64
+          cat > ${{ runner.temp }}/android.ini <<EOF
+          [binaries]
+          ar = '${TOOLCHAIN}/bin/llvm-ar'
+          c = '${TOOLCHAIN}/bin/aarch64-linux-android25-clang'
+          cpp = '${TOOLCHAIN}/bin/aarch64-linux-android25-clang++'
+          strip = '${TOOLCHAIN}/bin/llvm-strip'
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          [properties]
+          needs_exe_wrapper = true
+          EOF
+          cd ${{ github.workspace }}/mesa
+          meson setup build/ --cross-file=${{ runner.temp }}/android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=25 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
+          meson compile -C build tinymesa
+      - name: Build wheel
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION_ARG=(--tag "$GITHUB_REF_NAME")
+          else
+            VERSION_ARG=(--sha "${GITHUB_SHA::7}")
+          fi
+
+          ./build_wheel.py "${VERSION_ARG[@]}" \
+            --platform android_25_arm64_v8a \
+            mesa-25.2.7 ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa.so
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinymesa-whl-mesa-25.2.7-android-arm64-v8a-validation
+          path: dist/
