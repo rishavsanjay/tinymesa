@@ -138,23 +138,9 @@ jobs:
       - name: Build mesa
         shell: bash
         run: |
-          TOOLCHAIN=${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64
-          cat > ${{ runner.temp }}/android.ini <<EOF
-          [binaries]
-          ar = '${TOOLCHAIN}/bin/llvm-ar'
-          c = '${TOOLCHAIN}/bin/aarch64-linux-android25-clang'
-          cpp = '${TOOLCHAIN}/bin/aarch64-linux-android25-clang++'
-          strip = '${TOOLCHAIN}/bin/llvm-strip'
-          [host_machine]
-          system = 'android'
-          cpu_family = 'aarch64'
-          cpu = 'armv8'
-          endian = 'little'
-          [properties]
-          needs_exe_wrapper = true
-          EOF
+          export PATH="${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           cd ${{ github.workspace }}/mesa
-          meson setup build/ --cross-file=${{ runner.temp }}/android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=25 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
+          meson setup build/ --cross-file=${{ github.workspace }}/android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=25 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
           meson compile -C build tinymesa
       - name: Build wheel
         run: |
