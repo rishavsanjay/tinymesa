@@ -130,7 +130,7 @@ jobs:
       - name: Verify Android NDK
         shell: bash
         run: |
-          test -x "${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android25-clang"
+          test -x "${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
       - name: Clone mesa
         run: git clone --depth 1 --branch mesa-25.2.7 https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
       - name: Patch mesa
@@ -140,7 +140,7 @@ jobs:
         run: |
           export PATH="${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           cd ${{ github.workspace }}/mesa
-          meson setup build/ --cross-file=${{ github.workspace }}/android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=25 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
+          meson setup build/ --cross-file=${{ github.workspace }}/android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=24 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
           meson compile -C build tinymesa
       - name: Build wheel
         run: |
@@ -151,7 +151,7 @@ jobs:
           fi
 
           ./build_wheel.py "${VERSION_ARG[@]}" \
-            --platform android_25_arm64_v8a \
+            --platform android_24_arm64_v8a \
             mesa-25.2.7 ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa.so
       - name: Upload artifact
         uses: actions/upload-artifact@v4

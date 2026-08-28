@@ -1,0 +1,24 @@
+From: Rishav Sanjay <rishavnps@gmail.com>
+Date: Sat, 29 Aug 2026 00:00:00 +0530
+Subject: [PATCH] meson: allow Android API 24
+Mesa-Version: ==25.2.7
+
+---
+ meson.options | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/meson.options b/meson.options
+index 2392792..763fe5c 100644
+--- a/meson.options
++++ b/meson.options
+@@ -580,7 +580,7 @@ option(
+ option(
+   'platform-sdk-version',
+   type : 'integer',
+-  min : 25,
++  min : 24,
+   max : 10000,
+   value : 34,
+   description : 'Android Platform SDK version. Default: Android14 version.'
+--
+2.52.0
