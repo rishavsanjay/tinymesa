@@ -35,7 +35,8 @@ jobs:
         shell: bash
         run: |
           export PATH="${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          sed "s/android[0-9]*/android${{ matrix.api }}/g" android.ini > "android-${{ matrix.api }}.ini"
+          sed -E "s#(aarch64-linux-android)[0-9]+(-clang(\\+\\+)?)#\\1${{ matrix.api }}\\2#g" \
+            android.ini > "android-${{ matrix.api }}.ini"
           cd ${{ github.workspace }}/mesa
           meson setup build/ --cross-file=${{ github.workspace }}/android-${{ matrix.api }}.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=${{ matrix.api }} -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
           meson compile -C build tinymesa
