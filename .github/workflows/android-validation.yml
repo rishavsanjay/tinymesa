@@ -7,6 +7,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  arm64-emulator-probe:
+    name: Probe arm64 Android emulator support
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - name: Inspect runner virtualization and Android tooling
+        shell: bash
+        run: |
+          set -euxo pipefail
+          uname -m
+          uname -a
+          id
+          ls -l /dev/kvm || true
+          test -c /dev/kvm && echo "kvm_device=true" || echo "kvm_device=false"
+          test -r /dev/kvm && echo "kvm_readable=true" || echo "kvm_readable=false"
+          test -w /dev/kvm && echo "kvm_writable=true" || echo "kvm_writable=false"
+          command -v emulator || true
+          command -v sdkmanager || true
+          ls -ld /usr/local/lib/android/sdk || true
+
   android:
     name: Build tinymesa mesa-25.2.7 on Android arm64
     runs-on: ubuntu-22.04
