@@ -6,9 +6,14 @@ on:
       - android-ci-validation
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   android:
     name: Build tinymesa for Android API ${{ matrix.api }} arm64
+    if: false
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -65,7 +70,6 @@ jobs:
 
   emulator:
     name: Load tinymesa on Android API 25 then API 24
-    needs: android
     runs-on: macos-14
     timeout-minutes: 30
     steps:
@@ -74,6 +78,8 @@ jobs:
         with:
           pattern: tinymesa-android-api*-arm64-emulator
           path: artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 33255087504
       - name: Boot emulators and load tinymesa
         shell: bash
         run: |
@@ -104,7 +110,7 @@ jobs:
             "${ADB}" kill-server || true
             "${EMULATOR}" "@${avd_name}" \
               -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data \
-              -gpu swiftshader_indirect -accel on >"${emulator_log}" 2>&1 &
+              -gpu swiftshader_indirect -accel off >"${emulator_log}" 2>&1 &
             emulator_pid=$!
 
             cleanup() {
