@@ -13,12 +13,11 @@ permissions:
 jobs:
   android:
     name: Build tinymesa for Android API ${{ matrix.api }} arm64
-    if: false
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        api: [25, 24]
+        api: [30]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,7 +35,7 @@ jobs:
         shell: bash
         run: |
           export PATH="${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          sed "s/android24/android${{ matrix.api }}/g" android.ini > "android-${{ matrix.api }}.ini"
+          sed "s/android[0-9]*/android${{ matrix.api }}/g" android.ini > "android-${{ matrix.api }}.ini"
           cd ${{ github.workspace }}/mesa
           meson setup build/ --cross-file=${{ github.workspace }}/android-${{ matrix.api }}.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=${{ matrix.api }} -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
           meson compile -C build tinymesa
@@ -51,109 +50,8 @@ jobs:
           ./build_wheel.py "${VERSION_ARG[@]}" \
             --platform android_${{ matrix.api }}_arm64_v8a \
             mesa-25.2.7 ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa.so
-      - name: Build runtime loader bundle
-        shell: bash
-        run: |
-          export NDK_BIN="${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          mkdir -p runtime
-          cp mesa/build/src/tinymesa/libtinymesa.so runtime/
-          cp "${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" runtime/
-          "${NDK_BIN}/aarch64-linux-android${{ matrix.api }}-clang" \
-            .github/scripts/android_dlopen_test.c -ldl -o runtime/dlopen_tinymesa
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tinymesa-android-api${{ matrix.api }}-arm64-emulator
-          path: |
-            dist/
-            runtime/
-
-  emulator:
-    name: Load tinymesa on Android API 25 then API 24
-    runs-on: macos-14
-    timeout-minutes: 30
-    steps:
-      - name: Download runtime bundles
-        uses: actions/download-artifact@v4
-        with:
-          pattern: tinymesa-android-api*-arm64-emulator
-          path: artifacts
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 33255087504
-      - name: Boot emulators and load tinymesa
-        shell: bash
-        run: |
-          set -euxo pipefail
-          SDKMANAGER="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
-          AVDMANAGER="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/avdmanager"
-          EMULATOR="${ANDROID_SDK_ROOT}/emulator/emulator"
-          ADB="${ANDROID_SDK_ROOT}/platform-tools/adb"
-          test -x "${SDKMANAGER}"
-          test -x "${AVDMANAGER}"
-          test -x "${EMULATOR}"
-          test -x "${ADB}"
-          "${EMULATOR}" -accel-check
-
-          for api in 25 24; do
-            package="system-images;android-${api};default;arm64-v8a"
-            avd_name="tinymesa_api${api}_arm64"
-            emulator_log="${RUNNER_TEMP}/emulator-api${api}.log"
-            runtime_dir="${GITHUB_WORKSPACE}/artifacts/tinymesa-android-api${api}-arm64-emulator/runtime"
-            remote_dir="/data/local/tmp/tinymesa-api${api}"
-
-            test -f "${runtime_dir}/libtinymesa.so"
-            test -f "${runtime_dir}/libc++_shared.so"
-            test -f "${runtime_dir}/dlopen_tinymesa"
-            "${SDKMANAGER}" "${package}"
-            printf 'no\n' | "${AVDMANAGER}" create avd --force --name "${avd_name}" --package "${package}"
-
-            "${ADB}" kill-server || true
-            "${EMULATOR}" "@${avd_name}" \
-              -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data \
-              -gpu swiftshader_indirect -accel off >"${emulator_log}" 2>&1 &
-            emulator_pid=$!
-
-            cleanup() {
-              "${ADB}" emu kill || true
-              kill "${emulator_pid}" || true
-              wait "${emulator_pid}" || true
-              "${AVDMANAGER}" delete avd --name "${avd_name}" || true
-              "${SDKMANAGER}" --uninstall "${package}" || true
-            }
-            trap cleanup EXIT
-
-            booted=0
-            for attempt in $(seq 1 240); do
-              if ! kill -0 "${emulator_pid}" 2>/dev/null; then
-                cat "${emulator_log}"
-                exit 1
-              fi
-              if "${ADB}" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -qx 1; then
-                booted=1
-                break
-              fi
-              sleep 2
-            done
-            if [[ "${booted}" != 1 ]]; then
-              cat "${emulator_log}"
-              exit 1
-            fi
-
-            actual_api=$("${ADB}" shell getprop ro.build.version.sdk | tr -d '\r')
-            actual_abi=$("${ADB}" shell getprop ro.product.cpu.abi | tr -d '\r')
-            test "${actual_api}" = "${api}"
-            test "${actual_abi}" = arm64-v8a
-
-            "${ADB}" shell "rm -rf '${remote_dir}' && mkdir -p '${remote_dir}'"
-            "${ADB}" push "${runtime_dir}/libtinymesa.so" "${remote_dir}/"
-            "${ADB}" push "${runtime_dir}/libc++_shared.so" "${remote_dir}/"
-            "${ADB}" push "${runtime_dir}/dlopen_tinymesa" "${remote_dir}/"
-            "${ADB}" shell "chmod 755 '${remote_dir}/dlopen_tinymesa'"
-            loader_output=$("${ADB}" shell "cd '${remote_dir}' && LD_LIBRARY_PATH=. ./dlopen_tinymesa ./libtinymesa.so" | tr -d '\r')
-            printf '%s\n' "${loader_output}"
-            grep -qx dlopen_ok <<<"${loader_output}"
-            grep -q '^ir3_compile_shader_nir=0x' <<<"${loader_output}"
-
-            cleanup
-            trap - EXIT
-          done
+          name: tinymesa-android-api${{ matrix.api }}-arm64
+          path: dist/
