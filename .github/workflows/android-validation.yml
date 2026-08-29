@@ -26,6 +26,22 @@ jobs:
           command -v sdkmanager || true
           ls -ld /usr/local/lib/android/sdk || true
 
+  macos-arm64-emulator-probe:
+    name: Probe macOS arm64 Android emulator support
+    runs-on: macos-14
+    steps:
+      - name: Inspect runner virtualization and Android tooling
+        shell: bash
+        run: |
+          set -euxo pipefail
+          uname -m
+          sysctl kern.hv_support || true
+          command -v emulator || true
+          command -v sdkmanager || true
+          test -x "${ANDROID_SDK_ROOT}/emulator/emulator"
+          file "${ANDROID_SDK_ROOT}/emulator/emulator"
+          "${ANDROID_SDK_ROOT}/emulator/emulator" -accel-check || true
+
   android:
     name: Build tinymesa mesa-25.2.7 on Android arm64
     runs-on: ubuntu-22.04
