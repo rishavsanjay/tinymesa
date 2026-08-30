@@ -42,6 +42,7 @@ libvulkan_lvp.so (interpreter => None)
     libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6
     libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1
     libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6
+    ld-linux-x86-64.so.2 => /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 ```
 ### tinymesa:
 ```
@@ -85,6 +86,18 @@ Builds are automatically generated upon new releases of mesa (checked daily).
 
 ### Android
 
-Android arm64-v8a wheels target API 25 and currently ship
-`libtinymesa.so` with NIR + IR3/freedreno support. NAK is not included,
+Android arm64-v8a wheels require Android 11 (API 30) or newer and currently
+ship `libtinymesa.so` with NIR + IR3/freedreno support. NAK is not included,
 and `libtinymesa_cpu.so`/LLVMpipe is not built.
+
+Termux Python currently advertises an Android API 24 platform tag, so plain
+`pip install tinymesa` will reject the API 30 wheel even on newer devices.
+Install it explicitly with:
+
+```sh
+python -m pip install \
+  --platform android_30_arm64_v8a \
+  --only-binary=:all: \
+  --target "$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')" \
+  tinymesa
+```
