@@ -77,7 +77,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, ubuntu-22.04-arm, macos-14 ]
-        tag: [ mesa-25.2.7 ]
+        tag: [ mesa-26.2.1 ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -120,7 +120,7 @@ jobs:
           name: tinymesa-whl-${{ matrix.tag }}-${{ matrix.os }}
           path: dist/
   android:
-    name: Build tinymesa mesa-25.2.7 on Android arm64
+    name: Build tinymesa mesa-26.2.1 on Android arm64
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
@@ -132,9 +132,9 @@ jobs:
         run: |
           test -x "${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang"
       - name: Clone mesa
-        run: git clone --depth 1 --branch mesa-25.2.7 https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
+        run: git clone --depth 1 --branch mesa-26.2.1 https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
       - name: Patch mesa
-        run: ./apply_patches.py ${{ github.workspace }}/mesa mesa-25.2.7
+        run: ./apply_patches.py ${{ github.workspace }}/mesa mesa-26.2.1
       - name: Build mesa
         shell: bash
         run: |
@@ -152,11 +152,11 @@ jobs:
 
           ./build_wheel.py "${VERSION_ARG[@]}" \
             --platform android_30_arm64_v8a \
-            mesa-25.2.7 ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa.so
+            mesa-26.2.1 ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa.so
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tinymesa-whl-mesa-25.2.7-android-arm64-v8a
+          name: tinymesa-whl-mesa-26.2.1-android-arm64-v8a
           path: dist/
 
   release:
