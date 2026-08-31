@@ -77,7 +77,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, ubuntu-22.04-arm, macos-14 ]
-        tag: [ mesa-25.2.7 ]
+        tag: [ mesa-26.2.1 ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -119,10 +119,50 @@ jobs:
         with:
           name: tinymesa-whl-${{ matrix.tag }}-${{ matrix.os }}
           path: dist/
+  android:
+    name: Build tinymesa mesa-26.2.1 on Android arm64
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup tinymesa
+        uses: ./.github/actions/setup
+      - name: Verify Android NDK
+        shell: bash
+        run: |
+          test -x "${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang"
+      - name: Clone mesa
+        run: git clone --depth 1 --branch mesa-26.2.1 https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
+      - name: Patch mesa
+        run: ./apply_patches.py ${{ github.workspace }}/mesa mesa-26.2.1
+      - name: Build mesa
+        shell: bash
+        run: |
+          export PATH="${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+          cd ${{ github.workspace }}/mesa
+          meson setup build/ --cross-file=${{ github.workspace }}/android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=30 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
+          meson compile -C build tinymesa
+      - name: Build wheel
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION_ARG=(--tag "$GITHUB_REF_NAME")
+          else
+            VERSION_ARG=(--sha "${GITHUB_SHA::7}")
+          fi
+
+          ./build_wheel.py "${VERSION_ARG[@]}" \
+            --platform android_30_arm64_v8a \
+            mesa-26.2.1 ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa.so
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinymesa-whl-mesa-26.2.1-android-arm64-v8a
+          path: dist/
+
   release:
     name: Release tinymesa
     runs-on: ubuntu-22.04
-    needs: tinymesa
+    needs: [ tinymesa, android ]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     environment:
       name: pypi
