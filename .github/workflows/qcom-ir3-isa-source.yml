@@ -1,0 +1,30 @@
+name: QCOM IR3 ISASPEC source
+
+on:
+  push:
+    branches: [qcom-mockgpu-ir3-host]
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Mesa 26.2.1
+        run: git clone --depth 1 --branch mesa-26.2.1 https://gitlab.freedesktop.org/mesa/mesa.git mesa
+      - name: Pack exact IR3 ISA definitions
+        run: |
+          tar -czf ir3-isaspec-mesa-26.2.1.tar.gz \
+            mesa/src/freedreno/isa/ir3.xml \
+            mesa/src/freedreno/isa/ir3-common.xml \
+            mesa/src/freedreno/isa/ir3-cat0.xml \
+            mesa/src/freedreno/isa/ir3-cat1.xml \
+            mesa/src/freedreno/isa/ir3-cat2.xml \
+            mesa/src/freedreno/isa/ir3-cat3.xml \
+            mesa/src/freedreno/isa/ir3-cat4.xml \
+            mesa/src/freedreno/isa/ir3-cat5.xml \
+            mesa/src/freedreno/isa/ir3-cat6.xml \
+            mesa/src/freedreno/isa/ir3-cat7.xml
+      - name: Upload ISASPEC
+        uses: actions/upload-artifact@v4
+        with:
+          name: ir3-isaspec-mesa-26.2.1
+          path: ir3-isaspec-mesa-26.2.1.tar.gz
