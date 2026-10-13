@@ -85,10 +85,11 @@ Builds are automatically generated upon new releases of mesa (checked daily).
 
 ### Android (Termux)
 
-On arm64 Termux with Android 11 (API 30) or newer, download the Android
-library artifact from the Compile tinymesa workflow and copy `libtinymesa.so`
-into `$PREFIX/lib`. Android builds use the same Mesa versions as the desktop
-builds and include NIR and IR3/freedreno, but not NAK or LLVMpipe.
+On arm64 Termux with Android 11 (API 30) or newer, download `libtinymesa.so`
+into Termux's library directory. The Android build includes NIR and
+IR3/freedreno, but not NAK or LLVMpipe.
 
-Android wheels are also published to PyPI with the `android_30_arm64_v8a`
-platform tag.
+```sh
+curl -fL "https://github.com/sirhcm/tinymesa/releases/latest/download/libtinymesa-mesa-25.2.7-android-arm64-v8a.so" \
+  -o "$PREFIX/lib/libtinymesa.so"
+```
