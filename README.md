@@ -84,20 +84,17 @@ all these symbols, but in addition, a subset of symbols from `gallium`
 
 Builds are automatically generated upon new releases of mesa (checked daily).
 
-### Android
+### Android (Termux)
 
-Android arm64-v8a wheels require Android 11 (API 30) or newer and currently
-ship `libtinymesa.so` with NIR + IR3/freedreno support. NAK is not included,
-and `libtinymesa_cpu.so`/LLVMpipe is not built.
-
-Termux Python currently advertises an Android API 24 platform tag, so plain
-`pip install tinymesa` will reject the API 30 wheel even on newer devices.
-Install it explicitly with:
+On arm64 Termux with Android 11 (API 30) or newer, download the Android
+`libtinymesa.so` from a published tinymesa release into Termux's library
+directory. The Android build includes NIR and IR3/freedreno, but not NAK or
+LLVMpipe.
 
 ```sh
-python -m pip install \
-  --platform android_30_arm64_v8a \
-  --only-binary=:all: \
-  --target "$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')" \
-  tinymesa
+TAG=YOUR_RELEASE_TAG  # e.g. the next v* release containing the Android asset
+curl -fL "https://github.com/sirhcm/tinymesa/releases/download/${TAG}/libtinymesa-mesa-25.2.7-android-arm64-v8a.so" \
+  -o "$PREFIX/lib/libtinymesa.so"
 ```
+
+The file is also uploaded as an artifact by the Android CI workflow.

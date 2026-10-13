@@ -1,0 +1,50 @@
+name: Build tinymesa for Termux
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, android-arm64-wheel]
+    tags: ['v*']
+    paths:
+      - '.github/workflows/android.yml'
+      - '.github/actions/setup/**'
+      - 'android.ini'
+      - 'meson.build'
+      - 'apply_patches.py'
+      - 'patches/**'
+  pull_request:
+
+jobs:
+  android:
+    name: Build Android arm64 (API 30)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Build libtinymesa.so
+        shell: bash
+        run: |
+          NDK="${ANDROID_SDK_ROOT}/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$NDK/aarch64-linux-android30-clang"
+          export PATH="$NDK:$PATH"
+          git clone --depth 1 --branch mesa-25.2.7 https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          ./apply_patches.py mesa mesa-25.2.7
+          cd mesa
+          meson setup build/ --cross-file=../android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=30 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
+          meson compile -C build tinymesa
+          cp build/src/tinymesa/libtinymesa.so ../libtinymesa-mesa-25.2.7-android-arm64-v8a.so
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinymesa-android-arm64
+          path: libtinymesa-mesa-25.2.7-android-arm64-v8a.so
+      - name: Attach library to GitHub release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" libtinymesa-mesa-25.2.7-android-arm64-v8a.so --clobber
