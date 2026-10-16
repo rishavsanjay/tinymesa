@@ -90,6 +90,26 @@ into Termux's library directory. The Android build includes NIR and
 IR3/freedreno, but not NAK or LLVMpipe.
 
 ```sh
-curl -fL "https://github.com/sirhcm/tinymesa/releases/download/android/libtinymesa-android-arm64-v8a.so" \
+curl -fL "https://github.com/tinygrad/tinymesa/releases/download/android/libtinymesa-android-arm64-v8a.so" \
   -o "$PREFIX/lib/libtinymesa.so"
 ```
+
+To build another supported Mesa release for Android, run the compile workflow
+with `mesa_tag` set to its release tag, for example `mesa-26.2.5`. Enable
+`publish_android` to add its library and SHA256 checksum to the `android`
+release. This runs only the Android build; the normal desktop, Rusticl, and
+PyPI release versions keep their existing pins.
+
+Once published, select that version directly and keep it alongside other
+Mesa builds:
+
+```sh
+curl -fL "https://github.com/tinygrad/tinymesa/releases/download/android/libtinymesa-mesa-26.2.5-android-arm64-v8a.so" \
+  -o "$PREFIX/lib/libtinymesa-mesa-26.2.5.so"
+```
+
+For tinygrad, select the downloaded file with
+`MESA_PATH="$PREFIX/lib/libtinymesa-mesa-26.2.5.so"`. Use tinygrad bindings
+generated for the selected Mesa version; Mesa's internal compiler ABI can
+change between releases. Versioned downloads do not replace the unversioned
+library used by other applications.
