@@ -10,6 +10,8 @@ on:
     paths:
       - '.github/**'
       - 'meson.build'
+      - 'tinymesa_version.c'
+      - 'apply_patches.py'
       - 'android.ini'
     tags:
       - 'v*'
@@ -80,7 +82,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, ubuntu-22.04-arm, macos-14, android ]
-        tag: [ mesa-25.2.7 ]
+        tag: [ mesa-25.2.7, mesa-26.2.5 ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -126,7 +128,15 @@ jobs:
         if: matrix.os != 'android'
         run: |
           pip install dist/*.whl
-          python3 -c "from ctypes import CDLL; from tinymesa import libtinymesa, libtinymesa_cpu; CDLL(libtinymesa).glsl_type_singleton_init_or_ref(), CDLL(libtinymesa_cpu).glsl_type_singleton_init_or_ref()"
+          python3 - <<'PY'
+          import ctypes
+          from tinymesa import libtinymesa, libtinymesa_cpu
+          for path in (libtinymesa, libtinymesa_cpu):
+            library = ctypes.CDLL(path)
+            library.tinymesa_mesa_version.restype = ctypes.c_char_p
+            assert library.tinymesa_mesa_version().decode() == '${{ matrix.tag }}'.removeprefix('mesa-')
+            library.glsl_type_singleton_init_or_ref()
+          PY
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -143,10 +153,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp mesa/build/src/tinymesa/libtinymesa.so libtinymesa-android-arm64-v8a.so
+          cp mesa/build/src/tinymesa/libtinymesa.so libtinymesa-${{ matrix.tag }}-android-arm64-v8a.so
           gh release view android > /dev/null 2>&1 ||
-            gh release create android --target "$GITHUB_SHA" --title "Android arm64" --notes "Updated on tinymesa version releases." --latest=false
-          gh release upload android libtinymesa-android-arm64-v8a.so --clobber
+            gh release create android --target "$GITHUB_SHA" --title "Android arm64" --notes "Updated on tinymesa version releases." --latest=false ||
+            gh release view android > /dev/null 2>&1
+          gh release upload android libtinymesa-${{ matrix.tag }}-android-arm64-v8a.so --clobber
   release:
     name: Release tinymesa
     runs-on: ubuntu-22.04

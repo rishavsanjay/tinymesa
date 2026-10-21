@@ -39,6 +39,9 @@ foreach sym : nak_symbols
 endforeach
 
 ir3_symbols = [
+  'ir3_shader_from_nir',
+  'ir3_shader_get_variant',
+  'ir3_shader_destroy',
   'ir3_compile_shader_nir',
   'ir3_get_compiler_options',
   'ir3_nir_post_finalize',
@@ -53,9 +56,9 @@ foreach sym : ir3_symbols
 endforeach
 
 if host_machine.system() == 'android'
-  shared_library('tinymesa', link_whole : [ _libnir ], link_args : ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common ])
+  shared_library('tinymesa', 'tinymesa_version.c', link_whole : [ _libnir ], link_args : ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common ])
 else
-  shared_library('tinymesa', link_whole : [ _libnir ], link_args : nak_link_args+ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common ], dependencies : [ idep_nak ])
-  shared_library('tinymesa_cpu', link_whole : [ _libnir ], link_args : lvp_link_args+nak_link_args+ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common, libgallium ], dependencies : [ idep_nak ])
+  shared_library('tinymesa', 'tinymesa_version.c', link_whole : [ _libnir ], link_args : nak_link_args+ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common ], dependencies : [ idep_nak ])
+  shared_library('tinymesa_cpu', 'tinymesa_version.c', link_whole : [ _libnir ], link_args : lvp_link_args+nak_link_args+ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common, libgallium ], dependencies : [ idep_nak ])
 endif
 

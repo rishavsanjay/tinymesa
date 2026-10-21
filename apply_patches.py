@@ -23,3 +23,4 @@ with (mesa_dir / "src/meson.build").open("a") as f: f.write("subdir('tinymesa')\
 
 (mesa_dir / "src/tinymesa").mkdir(exist_ok=True)
 shutil.copy(pathlib.Path(__file__).parent / "meson.build", mesa_dir / "src/tinymesa/meson.build")
+shutil.copy(pathlib.Path(__file__).parent / "tinymesa_version.c", mesa_dir / "src/tinymesa/tinymesa_version.c")
