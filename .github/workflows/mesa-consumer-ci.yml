@@ -15,6 +15,9 @@ env:
   NUMEXPR_NUM_THREADS: 1
   TEST_TIMEOUT: 180
   NULL_ALLOW_COPYOUT: 1
+defaults:
+  run:
+    shell: bash
 jobs:
   compatibility:
     runs-on: ubuntu-24.04
