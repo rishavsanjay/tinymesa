@@ -1,0 +1,106 @@
+name: Mesa consumer fork CI
+on:
+  push:
+    branches: [ci/mesa-25-26-20261021]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONPATH: ${{ github.workspace }}
+  PYTHONFAULTHANDLER: 1
+  OPENBLAS_NUM_THREADS: 1
+  OMP_NUM_THREADS: 1
+  MKL_NUM_THREADS: 1
+  NUMEXPR_NUM_THREADS: 1
+  TEST_TIMEOUT: 180
+  NULL_ALLOW_COPYOUT: 1
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: rishavsanjay/tinygrad
+          ref: d6f046a59573808125555a72088dbde6212cf730
+      - uses: ./.github/actions/setup-tinygrad
+        with:
+          python-version: '3.12'
+          deps: linting
+      - run: python -m mypy tinygrad/
+      - run: python -m ruff check .
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        mesa: ['published-25', '25.2.7', '26.2.5']
+    env:
+      EXPECTED_MESA: ${{ matrix.mesa == 'published-25' && '25.2.7' || matrix.mesa }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: rishavsanjay/tinygrad
+          ref: d6f046a59573808125555a72088dbde6212cf730
+      - uses: ./.github/actions/setup-tinygrad
+        with:
+          python-version: '3.12'
+          deps: testing_unit
+          llvm: 'true'
+      - name: Install published legacy wheel
+        if: matrix.mesa == 'published-25'
+        run: uv pip install tinymesa==25.2.7.2
+      - name: Install wheel from Tinymesa fork CI
+        if: matrix.mesa != 'published-25'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run watch '39618277669' --repo rishavsanjay/tinymesa --exit-status --interval 30
+          gh run download '39618277669' --repo rishavsanjay/tinymesa --name 'tinymesa-whl-mesa-${{ matrix.mesa }}-ubuntu-22.04' --dir wheel
+          uv pip install --no-deps wheel/*.whl
+      - name: Verify ABI and library provenance
+        env:
+          DEV: CPU:LVP
+        run: |
+          mkdir results
+          python - <<'PY' | tee results/provenance.json
+          import hashlib, importlib.metadata, json, os, pathlib
+          from tinygrad.runtime.autogen import mesa
+          from tinygrad.runtime.support import mesa_abi
+          assert mesa_abi.MESA_VERSION == os.environ['EXPECTED_MESA']
+          assert 'MESA_PATH' not in os.environ and 'MESA_VERSION' not in os.environ
+          library = pathlib.Path(mesa_abi.dll._name)
+          print(json.dumps({'version': mesa_abi.MESA_VERSION, 'wheel': importlib.metadata.version('tinymesa'),
+                            'library': str(library), 'sha256': hashlib.sha256(library.read_bytes()).hexdigest(),
+                            'binding': mesa.nir_shader_create.__module__}))
+          PY
+      - name: LVP operations
+        env:
+          DEV: CPU:LVP
+          IMAGE: 0
+          CACHEDB: ${{ runner.temp }}/lvp-ops.db
+        run: python -m pytest test/runtime/test_ops.py -x -q -n12 --max-worker-restart=0 --junitxml=results/lvp-ops.xml | tee results/lvp-ops.log
+      - name: LVP runtime and loader tests
+        env:
+          DEV: CPU:LVP
+          IMAGE: 0
+          CACHEDB: ${{ runner.temp }}/lvp-runtime.db
+        run: python -m pytest test/runtime/test_dtype.py test/runtime/test_dtype_alu.py test/runtime/test_uops.py test/runtime/test_jit.py test/device/qcom/test_qcom.py test/null/test_mesa_version.py -x -q -n12 --max-worker-restart=0 --junitxml=results/lvp-runtime.xml | tee results/lvp-runtime.log
+      - name: NAK compilation
+        env:
+          DEV: NULL:NAK:sm_120
+          IMAGE: 0
+          CACHEDB: ${{ runner.temp }}/nak-ops.db
+        run: python -m pytest test/runtime/test_ops.py test/null/test_compile_failures.py -x -q -n12 --max-worker-restart=0 --junitxml=results/nak-ops.xml | tee results/nak-ops.log
+      - name: IR3 compilation
+        env:
+          DEV: NULL:IR3:a630,IMAGE_PITCH_ALIGNMENT=64
+          IMAGE: 1
+          CACHEDB: ${{ runner.temp }}/ir3-ops.db
+        run: python -m pytest test/runtime/test_ops.py test/null/test_compile_failures.py -x -q -n12 --max-worker-restart=0 --junitxml=results/ir3-ops.xml | tee results/ir3-ops.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mesa-results-${{ matrix.mesa }}
+          path: results/
