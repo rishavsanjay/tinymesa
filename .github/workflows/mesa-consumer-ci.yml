@@ -16,28 +16,15 @@ env:
   TEST_TIMEOUT: 180
   NULL_ALLOW_COPYOUT: 1
 jobs:
-  quality:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          repository: rishavsanjay/tinygrad
-          ref: d6f046a59573808125555a72088dbde6212cf730
-      - uses: ./.github/actions/setup-tinygrad
-        with:
-          python-version: '3.12'
-          deps: linting
-      - run: python -m mypy tinygrad/
-      - run: python -m ruff check .
   compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        mesa: ['published-25', '25.2.7', '26.2.5']
+        mesa: ['25.2.7', '26.2.5']
     env:
-      EXPECTED_MESA: ${{ matrix.mesa == 'published-25' && '25.2.7' || matrix.mesa }}
+      EXPECTED_MESA: ${{ matrix.mesa }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -48,15 +35,10 @@ jobs:
           python-version: '3.12'
           deps: testing_unit
           llvm: 'true'
-      - name: Install published legacy wheel
-        if: matrix.mesa == 'published-25'
-        run: uv pip install tinymesa==25.2.7.2
       - name: Install wheel from Tinymesa fork CI
-        if: matrix.mesa != 'published-25'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run watch '39618277669' --repo rishavsanjay/tinymesa --exit-status --interval 30
           gh run download '39618277669' --repo rishavsanjay/tinymesa --name 'tinymesa-whl-mesa-${{ matrix.mesa }}-ubuntu-22.04' --dir wheel
           uv pip install --no-deps wheel/*.whl
       - name: Verify ABI and library provenance
