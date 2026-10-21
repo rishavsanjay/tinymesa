@@ -127,6 +127,34 @@ jobs:
         run: |
           pip install dist/*.whl
           python3 -c "from ctypes import CDLL; from tinymesa import libtinymesa, libtinymesa_cpu; CDLL(libtinymesa).glsl_type_singleton_init_or_ref(), CDLL(libtinymesa_cpu).glsl_type_singleton_init_or_ref()"
+      - name: Check retained IR3 exports (fork CI)
+        run: |
+          python3 - <<'PY'
+          import ctypes, glob, hashlib, json, pathlib, subprocess
+          required = ['ir3_shader_from_nir', 'ir3_shader_get_variant', 'ir3_shader_destroy', 'ir3_shader_assemble']
+          records = []
+          for path in glob.glob('mesa/build/src/tinymesa/libtinymesa*.so') + glob.glob('mesa/build/src/tinymesa/libtinymesa*.dylib'):
+            if '${{ matrix.os }}' == 'android':
+              table = subprocess.check_output(['readelf', '--dyn-syms', '--wide', path], text=True)
+              symbols = {line.split()[-1] for line in table.splitlines() if 'GLOBAL DEFAULT' in line and ' UND ' not in line}
+              assert set(required) <= symbols
+              assert 'tinymesa_mesa_version' not in symbols
+            else:
+              library = ctypes.CDLL(path)
+              assert all(hasattr(library, name) for name in required)
+              assert not hasattr(library, 'tinymesa_mesa_version')
+            records.append({'library': path, 'sha256': hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
+                            'required_exports': required, 'marker_absent': True})
+          assert len(records) == (1 if '${{ matrix.os }}' == 'android' else 2)
+          result = {'mesa': '${{ matrix.tag }}', 'host': '${{ matrix.os }}', 'libraries': records}
+          print(json.dumps(result))
+          pathlib.Path('export-checks.json').write_text(json.dumps(result, indent=2))
+          PY
+      - name: Upload export evidence (fork CI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: exports-${{ matrix.tag }}-${{ matrix.os }}
+          path: export-checks.json
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
