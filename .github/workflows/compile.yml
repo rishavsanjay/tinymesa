@@ -1,174 +1,54 @@
 name: Compile tinymesa
-
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '15 0 * * *'
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/**'
-      - 'meson.build'
-      - 'android.ini'
-    tags:
-      - 'v*'
-      - 'rusticl*'
-  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
-  rusticl:
-    name: Build rusticl ${{ matrix.tag }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-22.04 ]
-        tag: [ mesa-26.1.4 ]
+  ir3-android:
+    name: Mesa 26.3.1 IR3 for Android arm64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Setup tinymesa
-        uses: ./.github/actions/setup
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          build-libclc: true
-      - name: Clone mesa
-        run: git clone --depth 1 --branch ${{ matrix.tag }} https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
-      - name: Build mesa
-        id: build
-        shell: bash
+          python-version: '3.12'
+      - name: Set up cross-build dependencies
         run: |
-          cd ${{ github.workspace }}/mesa
-          export CLANG_PATH=$(which clang-20)
-          meson setup build/ -Dllvm=enabled -Dshared-llvm=disabled -Dstatic-libclc=all -Dgallium-drivers=llvmpipe -Dgallium-rusticl=true -Dglx=disabled -Dvulkan-drivers="[]" -Dopengl=false -Dplatforms="[]" -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
-          meson compile -C build RusticlOpenCL
-          echo "rusticl_path=$(meson introspect build/ --targets | jq -r '.[] | select(.name=="RusticlOpenCL") | .filename[0]')" >> "$GITHUB_OUTPUT"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          python -m pip install meson ninja mako pyyaml packaging
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends flex bison
+          ndk="$ANDROID_SDK_ROOT/ndk/29.0.14206865"
+          if [ ! -d "$ndk" ]; then sdkmanager 'ndk;29.0.14206865'; fi
+          printf '%s\n' "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Fetch and verify Mesa
+        run: |
+          curl -fLsS --retry 3 https://archive.mesa3d.org/mesa-26.3.1.tar.xz -o mesa.tar.xz
+          printf '%s  %s\n' 4e4e438eac7b840a9383988cbb7c08dad8041da544b9319fc26d319fa7348961 mesa.tar.xz | sha256sum -c
+          tar -xf mesa.tar.xz
+          # The Darwin disk-cache patch and the NAK patch are outside this build.
+          cp apply_patches.py apply_linux_ir3.py
+          sed -i '/^for p in .*patches.*iterdir():/c\for p in ():' apply_linux_ir3.py
+          ./apply_linux_ir3.py "$PWD/mesa-26.3.1" mesa-26.3.1
+      - name: Build IR3 and verify the Android ELF
+        run: |
+          meson setup mesa-26.3.1/build mesa-26.3.1 --cross-file="$PWD/android.ini" \
+            -Db_staticpic=true -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=30 \
+            -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers='[]' \
+            -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled \
+            -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false \
+            -Degl=disabled -Dgbm=disabled -Dvideo-codecs='[]'
+          meson compile -C mesa-26.3.1/build tinymesa
+          mkdir artifact
+          cp mesa-26.3.1/build/src/tinymesa/libtinymesa.so artifact/
+          cd artifact
+          llvm-readelf -h libtinymesa.so
+          llvm-readelf -h libtinymesa.so | grep 'Machine:.*AArch64'
+          sha256sum libtinymesa.so > SHA256SUMS
+      - uses: actions/upload-artifact@v4
         with:
-          name: rusticl-${{ matrix.tag }}-${{ matrix.os }}
-          path: ${{ steps.build.outputs.rusticl_path }}
-
-  release-rusticl:
-    name: Release rusticl
-    runs-on: ubuntu-22.04
-    needs: rusticl
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/rusticl')
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: rusticl-*
-          merge-multiple: true
-      - name: Create release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME"
-
-  tinymesa:
-    name: Build tinymesa ${{ matrix.tag }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os == 'android' && 'ubuntu-22.04' || matrix.os }}
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-22.04, ubuntu-22.04-arm, macos-14, android ]
-        tag: [ mesa-25.2.7, mesa-26.2.5 ]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Setup tinymesa
-        uses: ./.github/actions/setup
-      - name: Clone mesa
-        run: git clone --depth 1 --branch ${{ matrix.tag }} https://gitlab.freedesktop.org/mesa/mesa.git ${{ github.workspace }}/mesa
-      - name: Patch mesa
-        run: ./apply_patches.py ${{ github.workspace }}/mesa ${{ matrix.tag }}
-      - name: Build mesa
-        if: matrix.os != 'android'
-        shell: bash
-        run: |
-          cd ${{ github.workspace }}/mesa
-          export CLANG_PATH=$(which clang-20)
-          meson setup build/ -Db_staticpic=true -Dgallium-drivers=llvmpipe -Dplatforms="[]" -Dglx=disabled -Dvulkan-drivers=swrast,nouveau,freedreno -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
-          meson compile -C build tinymesa tinymesa_cpu
-      - name: Build mesa (Android)
-        if: matrix.os == 'android'
-        shell: bash
-        run: |
-          export PATH="$ANDROID_SDK_ROOT/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          cd ${{ github.workspace }}/mesa
-          meson setup build/ --cross-file=../android.ini -Db_staticpic=true -Dplatforms=android -Dplatform-sdk-version=30 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers="[]" -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false -Degl=disabled -Dgbm=disabled -Dvideo-codecs="[]"
-          meson compile -C build tinymesa
-      - name: Polyfill glibc
-        if: runner.os == 'Linux' && matrix.os != 'android'
-        run: |
-          # can't go earlier than 2.32 because of __libc_single_threaded@GLIBC_2.32
-          polyfill-glibc --target-glibc=2.32 ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa*.so
-      - name: Build wheel
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION_ARG=(--tag "$GITHUB_REF_NAME")
-          else
-            VERSION_ARG=(--sha "${GITHUB_SHA::7}")
-          fi
-
-          ./build_wheel.py "${VERSION_ARG[@]}" \
-            --platform ${{ matrix.os == 'android' && 'android_30_arm64_v8a' || matrix.os == 'ubuntu-22.04' && 'manylinux_2_32_x86_64' || matrix.os == 'ubuntu-22.04-arm' && 'manylinux_2_32_aarch64' || 'macosx_14_0_arm64' }} \
-            ${{ matrix.tag }} ${{ github.workspace }}/mesa/build/src/tinymesa/libtinymesa*${{ runner.os == 'macOS' && '.dylib' || '.so' }}
-      - name: Test loading with ctypes
-        if: matrix.os != 'android'
-        run: |
-          pip install dist/*.whl
-          python3 -c "from ctypes import CDLL; from tinymesa import libtinymesa, libtinymesa_cpu; CDLL(libtinymesa).glsl_type_singleton_init_or_ref(), CDLL(libtinymesa_cpu).glsl_type_singleton_init_or_ref()"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tinymesa-whl-${{ matrix.tag }}-${{ matrix.os }}
-          path: dist/
-      - name: Upload Android library
-        if: matrix.os == 'android'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tinymesa-${{ matrix.tag }}-android-arm64-v8a
-          path: mesa/build/src/tinymesa/libtinymesa.so
-      - name: Attach Android library to GitHub release
-        if: matrix.os == 'android' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp mesa/build/src/tinymesa/libtinymesa.so libtinymesa-${{ matrix.tag }}-android-arm64-v8a.so
-          if [[ '${{ matrix.tag }}' == mesa-25.2.7 ]]; then
-            cp mesa/build/src/tinymesa/libtinymesa.so libtinymesa-android-arm64-v8a.so
-          fi
-          gh release view android > /dev/null 2>&1 ||
-            gh release create android --target "$GITHUB_SHA" --title "Android arm64" --notes "Updated on tinymesa version releases." --latest=false ||
-            gh release view android > /dev/null 2>&1
-          gh release upload android libtinymesa*-android-arm64-v8a.so --clobber
-  release:
-    name: Release tinymesa
-    runs-on: ubuntu-22.04
-    needs: tinymesa
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    environment:
-      name: pypi
-      url: https://pypi.org/p/tinymesa
-    permissions:
-      id-token: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: tinymesa-whl-*
-          merge-multiple: true
-      - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          name: tinymesa-mesa-26.3.1-android-arm64-v8a
+          path: artifact/
+          if-no-files-found: error
