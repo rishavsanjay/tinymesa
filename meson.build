@@ -52,7 +52,7 @@ foreach sym : ir3_symbols
   ir3_link_args += '-Wl,-u,' + symbol_prefix + sym
 endforeach
 
-if host_machine.system() == 'android'
+if host_machine.system() == 'android' or (with_freedreno_vk and not (with_nouveau_vk or with_gallium))
   shared_library('tinymesa', link_whole : [ _libnir ], link_args : ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common ])
 else
   shared_library('tinymesa', link_whole : [ _libnir ], link_args : nak_link_args+ir3_link_args, link_with : [ libfreedreno_ir3, libfreedreno_common ], dependencies : [ idep_nak ])

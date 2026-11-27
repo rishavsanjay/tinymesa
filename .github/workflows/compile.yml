@@ -6,20 +6,31 @@ permissions:
   contents: read
 
 jobs:
-  ir3-android:
-    name: Mesa 26.3.1 IR3 for Android arm64
+  ir3:
+    name: Mesa 26.3.1 IR3 for ${{ matrix.target }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: android-arm64-v8a
+            machine: AArch64
+          - target: linux-x86_64
+            machine: Advanced Micro Devices X86-64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Set up cross-build dependencies
+      - name: Set up build dependencies
         run: |
           python -m pip install meson ninja mako pyyaml packaging
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends flex bison glslang-tools
+      - name: Set up the Android NDK
+        if: matrix.target == 'android-arm64-v8a'
+        run: |
           ndk="$ANDROID_SDK_ROOT/ndk/29.0.14206865"
           if [ ! -d "$ndk" ]; then sdkmanager 'ndk;29.0.14206865'; fi
           printf '%s\n' "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
@@ -32,11 +43,18 @@ jobs:
           cp apply_patches.py apply_linux_ir3.py
           sed -i '/^for p in .*patches.*iterdir():/c\for p in ():' apply_linux_ir3.py
           ./apply_linux_ir3.py "$PWD/mesa-26.3.1" mesa-26.3.1
-      - name: Build IR3 and verify the Android ELF
+      - name: Build and verify IR3
+        env:
+          TARGET: ${{ matrix.target }}
+          MACHINE: ${{ matrix.machine }}
         run: |
-          meson setup mesa-26.3.1/build mesa-26.3.1 --cross-file="$PWD/android.ini" \
-            -Db_staticpic=true -Dbuildtype=release -Db_ndebug=false -Dplatforms=android -Dplatform-sdk-version=30 \
-            -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers='[]' \
+          platform_args=(-Dplatforms='[]')
+          if [[ "$TARGET" == android-arm64-v8a ]]; then
+            platform_args=(--cross-file="$PWD/android.ini" -Dplatforms=android -Dplatform-sdk-version=30
+                           -Dandroid-stub=true -Dandroid-libbacktrace=disabled)
+          fi
+          meson setup mesa-26.3.1/build mesa-26.3.1 "${platform_args[@]}" \
+            -Db_staticpic=true -Dbuildtype=release -Db_ndebug=false -Dgallium-drivers='[]' \
             -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled \
             -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false \
             -Degl=disabled -Dgbm=disabled -Dvideo-codecs='[]'
@@ -44,12 +62,17 @@ jobs:
           mkdir artifact
           cp mesa-26.3.1/build/src/tinymesa/libtinymesa.so artifact/
           cd artifact
-          llvm-readelf -h libtinymesa.so
-          llvm-readelf -h libtinymesa.so | grep 'Machine:.*AArch64'
-          llvm-readelf --dyn-syms --wide libtinymesa.so | grep " nir_validate_shader$"
+          readelf -h libtinymesa.so | grep "Machine:.*$MACHINE"
+          symbols=$(readelf --dyn-syms --wide libtinymesa.so)
+          for symbol in nir_validate_shader ir3_shader_assemble ir3_compile_shader_nir; do
+            grep " $symbol$" <<< "$symbols"
+          done
+          if [[ "$TARGET" == linux-x86_64 ]]; then
+            python -c 'from ctypes import CDLL; CDLL("./libtinymesa.so").glsl_type_singleton_init_or_ref()'
+          fi
           sha256sum libtinymesa.so > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: tinymesa-mesa-26.3.1-android-arm64-v8a
+          name: tinymesa-mesa-26.3.1-${{ matrix.target }}
           path: artifact/
           if-no-files-found: error
