@@ -48,6 +48,8 @@ jobs:
           cp apply_patches.py apply_linux_ir3.py
           sed -i '/^for p in .*patches.*iterdir():/c\for p in ():' apply_linux_ir3.py
           ./apply_linux_ir3.py "$PWD/mesa-src" mesa-27.0.0
+          # The snapshot compiles the generated disassembler in a separate static library.
+          sed -i '/^_libir3decode = static_library(/,/^)/ { /gnu_symbol_visibility/d; }' mesa-src/src/freedreno/isa/meson.build
       - name: Build and verify IR3
         env:
           TARGET: ${{ matrix.target }}
@@ -69,7 +71,7 @@ jobs:
           cd artifact
           readelf -h libtinymesa.so | grep "Machine:.*$MACHINE"
           symbols=$(readelf --dyn-syms --wide libtinymesa.so)
-          for symbol in nir_validate_shader ir3_shader_assemble ir3_compile_shader_nir; do
+          for symbol in nir_validate_shader ir3_shader_assemble ir3_compile_shader_nir ir3_isa_disasm; do
             grep " $symbol$" <<< "$symbols"
           done
           if [[ "$TARGET" == linux-x86_64 ]]; then
