@@ -1,13 +1,16 @@
-name: Compile tinymesa
+name: Compile Tinymesa Mesa 27.0 snapshot
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  MESA_COMMIT: 122a469fe8fc2814d6fe5ce2ada1d2bb3b06b775
+
 jobs:
   ir3:
-    name: Mesa 26.3.1 IR3 for ${{ matrix.target }}
+    name: Mesa 27.0 snapshot IR3 for ${{ matrix.target }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -36,13 +39,15 @@ jobs:
           printf '%s\n' "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
       - name: Fetch and verify Mesa
         run: |
-          curl -fLsS --retry 3 https://archive.mesa3d.org/mesa-26.3.1.tar.xz -o mesa.tar.xz
-          printf '%s  %s\n' 4e4e438eac7b840a9383988cbb7c08dad8041da544b9319fc26d319fa7348961 mesa.tar.xz | sha256sum -c
-          tar -xf mesa.tar.xz
+          git init -q mesa-src
+          git -C mesa-src fetch --depth=1 --no-tags https://gitlab.freedesktop.org/mesa/mesa.git "$MESA_COMMIT"
+          git -C mesa-src checkout -q --detach FETCH_HEAD
+          test "$(git -C mesa-src rev-parse HEAD)" = "$MESA_COMMIT"
+          test "$(cat mesa-src/VERSION)" = 27.0.0-devel
           # The Darwin disk-cache patch and the NAK patch are outside this build.
           cp apply_patches.py apply_linux_ir3.py
           sed -i '/^for p in .*patches.*iterdir():/c\for p in ():' apply_linux_ir3.py
-          ./apply_linux_ir3.py "$PWD/mesa-26.3.1" mesa-26.3.1
+          ./apply_linux_ir3.py "$PWD/mesa-src" mesa-27.0.0
       - name: Build and verify IR3
         env:
           TARGET: ${{ matrix.target }}
@@ -53,14 +58,14 @@ jobs:
             platform_args=(--cross-file="$PWD/android.ini" -Dplatforms=android -Dplatform-sdk-version=30
                            -Dandroid-stub=true -Dandroid-libbacktrace=disabled)
           fi
-          meson setup mesa-26.3.1/build mesa-26.3.1 "${platform_args[@]}" \
+          meson setup mesa-src/build mesa-src "${platform_args[@]}" \
             -Db_staticpic=true -Dbuildtype=release -Db_ndebug=false -Dgallium-drivers='[]' \
             -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled \
             -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false \
             -Degl=disabled -Dgbm=disabled -Dvideo-codecs='[]'
-          meson compile -C mesa-26.3.1/build tinymesa
+          meson compile -C mesa-src/build tinymesa
           mkdir artifact
-          cp mesa-26.3.1/build/src/tinymesa/libtinymesa.so artifact/
+          cp mesa-src/build/src/tinymesa/libtinymesa.so artifact/
           cd artifact
           readelf -h libtinymesa.so | grep "Machine:.*$MACHINE"
           symbols=$(readelf --dyn-syms --wide libtinymesa.so)
@@ -70,9 +75,10 @@ jobs:
           if [[ "$TARGET" == linux-x86_64 ]]; then
             python -c 'from ctypes import CDLL; CDLL("./libtinymesa.so").glsl_type_singleton_init_or_ref()'
           fi
-          sha256sum libtinymesa.so > SHA256SUMS
+          printf '%s\n' "$MESA_COMMIT" > MESA_COMMIT
+          sha256sum libtinymesa.so MESA_COMMIT > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: tinymesa-mesa-26.3.1-${{ matrix.target }}
+          name: tinymesa-mesa-27.0-devel-${{ matrix.target }}
           path: artifact/
           if-no-files-found: error
