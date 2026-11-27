@@ -35,7 +35,7 @@ jobs:
       - name: Build IR3 and verify the Android ELF
         run: |
           meson setup mesa-26.3.1/build mesa-26.3.1 --cross-file="$PWD/android.ini" \
-            -Db_staticpic=true -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=30 \
+            -Db_staticpic=true -Dbuildtype=release -Db_ndebug=false -Dplatforms=android -Dplatform-sdk-version=30 \
             -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Dgallium-drivers='[]' \
             -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dllvm=disabled \
             -Dshader-cache=disabled -Dzstd=disabled -Dzlib=disabled -Dopengl=false \
@@ -46,6 +46,7 @@ jobs:
           cd artifact
           llvm-readelf -h libtinymesa.so
           llvm-readelf -h libtinymesa.so | grep 'Machine:.*AArch64'
+          llvm-readelf --dyn-syms --wide libtinymesa.so | grep " nir_validate_shader$"
           sha256sum libtinymesa.so > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
